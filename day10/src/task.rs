@@ -1,5 +1,7 @@
 
-use std::{ops::FnMut, str::FromStr};
+use std::{ops::FnMut, str::FromStr, io::Write};
+
+pub type Result<T> = std::result::Result<T, &'static str>;
 
 enum Command {
     Noop,
@@ -8,14 +10,14 @@ enum Command {
 
 impl FromStr for Command {
     type Err = &'static str;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> Result<Self> {
         let cmd = s.split_ascii_whitespace().collect::<Vec<_>>();
-        match cmd[0] {
+        match *cmd.get(0).ok_or("expected a command")? {
             "noop" => {
                 Ok(Command::Noop)
             },
             "addx" => {
-                let x = cmd[1].parse::<i32>().map_err(|_| "cannot parse a number")?;
+                let x = cmd.get(1).ok_or("expected a number")?.parse::<i32>().map_err(|_| "cannot parse a number")?;
                 Ok(Command::Add(x))
             },
             _ => Err("invalid input")
@@ -23,7 +25,7 @@ impl FromStr for Command {
     }
 }
 
-fn process<F>(lines: &[String], mut exec: F) -> Result<(), &'static str>
+fn process<F>(lines: &[String], mut exec: F) -> Result<()>
 where F: FnMut(i32) {
     let mut x = 0;
     for line in lines {
@@ -41,7 +43,7 @@ where F: FnMut(i32) {
     Ok(())
 }
 
-pub fn task1(lines: &[String]) -> Result<i32, &'static str> {
+pub fn task1(lines: &[String]) -> Result<i32> {
     let mut n = 0;
     let mut total = 0;
     let inc = |x| {
@@ -54,14 +56,14 @@ pub fn task1(lines: &[String]) -> Result<i32, &'static str> {
     Ok(total)
 }
 
-pub fn task2(lines: &[String]) -> Result<(), &'static str> {
+pub fn task2<'a>(lines: &[String], mut out_writer: Box<dyn Write + 'a>) -> Result<()> {
     let mut n = 0;
     let draw = |x| {
         let pixel = if n >= x && n <= x + 2 { '#' } else { '.' };
-        print!("{}", pixel);
+        write!(out_writer, "{}", pixel).unwrap();
         n += 1;
         if n >= 40 {        // next line
-            println!();
+            writeln!(out_writer).unwrap();
             n = 0;
         }
     };
@@ -72,9 +74,8 @@ pub fn task2(lines: &[String]) -> Result<(), &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn test1() {
-        let data = &[
+    lazy_static! {
+        static ref DATA: Vec<String> = [
             "addx 15",
             "addx -11",
             "addx 6",
@@ -222,6 +223,26 @@ mod tests {
             "noop",
             "noop",
         ].into_iter().map(|s| s.to_string()).collect::<Vec<String>>();
-        assert_eq!(Ok(13140), task1(data));
+    }
+    #[test]
+    fn test1() {
+        assert_eq!(Ok(13140), task1(&DATA));
+    }
+
+    #[test]
+    fn test2() {
+        let mut buf = Vec::new();
+        task2(&DATA.clone(), Box::new(&mut buf)).unwrap();
+        assert_eq!(
+            String::from_utf8(buf),
+            Ok(
+            "##..##..##..##..##..##..##..##..##..##..\n\
+             ###...###...###...###...###...###...###.\n\
+             ####....####....####....####....####....\n\
+             #####.....#####.....#####.....#####.....\n\
+             ######......######......######......####\n\
+             #######.......#######.......#######.....\n"
+            .to_owned())
+        );
     }
 }

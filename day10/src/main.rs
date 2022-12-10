@@ -1,3 +1,7 @@
+#[cfg(test)]
+#[macro_use]
+extern crate lazy_static;
+
 mod input;
 mod task;
 use input::{read_file, read_stdin};
@@ -20,7 +24,7 @@ fn main() -> io::Result<()>{
         Ok(result) => println!("result {}", result),
         Err(error) => println!("error {}", error)
     }
-    match task2(&data) {
+    match task2(&data, Box::new(io::stdout())) {
         Ok(_) => println!("Ok"),
         Err(error) => println!("error {}", error)
     }

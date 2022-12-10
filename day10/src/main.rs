@@ -24,7 +24,7 @@ fn main() -> io::Result<()>{
         Ok(result) => println!("result {}", result),
         Err(error) => println!("error {}", error)
     }
-    match task2(&data, Box::new(io::stdout())) {
+    match task2(&data, &mut io::stdout()) {
         Ok(_) => println!("Ok"),
         Err(error) => println!("error {}", error)
     }

@@ -56,7 +56,7 @@ pub fn task1(lines: &[String]) -> Result<i32> {
     Ok(total)
 }
 
-pub fn task2<'a>(lines: &[String], mut out_writer: Box<dyn Write + 'a>) -> Result<()> {
+pub fn task2(lines: &[String], out_writer: &mut dyn Write) -> Result<()> {
     let mut n = 0;
     let draw = |x| {
         let pixel = if n >= x && n <= x + 2 { '#' } else { '.' };
@@ -232,7 +232,7 @@ mod tests {
     #[test]
     fn test2() {
         let mut buf = Vec::new();
-        task2(&DATA.clone(), Box::new(&mut buf)).unwrap();
+        task2(&DATA.clone(), &mut buf).unwrap();
         assert_eq!(
             String::from_utf8(buf),
             Ok(

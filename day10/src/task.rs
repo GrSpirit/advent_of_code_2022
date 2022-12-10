@@ -1,57 +1,71 @@
 
-pub fn task1(lines: &[String]) -> Result<i32, &'static str> {
-    let mut n = 0;
-    let mut x = 1;
-    let mut total = 0;
-    let mut inc = |x| {
-        n += 1;
-        if (n + 20) % 40 == 0 {
-            total += n * x;
-        }
-    };
-    for line in lines {
-        let cmd = line.split_ascii_whitespace().collect::<Vec<_>>();
+use std::{ops::FnMut, str::FromStr};
+
+enum Command {
+    Noop,
+    Add(i32),
+}
+
+impl FromStr for Command {
+    type Err = &'static str;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let cmd = s.split_ascii_whitespace().collect::<Vec<_>>();
         match cmd[0] {
             "noop" => {
-                inc(x);
+                Ok(Command::Noop)
             },
             "addx" => {
-                inc(x);
-                inc(x);
-                x += cmd[1].parse::<i32>().unwrap();
+                let x = cmd[1].parse::<i32>().map_err(|_| "cannot parse a number")?;
+                Ok(Command::Add(x))
             },
-            _ => return Err("invalid input")
+            _ => Err("invalid input")
         }
     }
+}
+
+fn process<F>(lines: &[String], mut exec: F) -> Result<(), &'static str>
+where F: FnMut(i32) {
+    let mut x = 0;
+    for line in lines {
+        match line.parse::<Command>()? {
+            Command::Noop => {
+                exec(x);
+            },
+            Command::Add(y) => {
+                exec(x);
+                exec(x);
+                x += y;
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn task1(lines: &[String]) -> Result<i32, &'static str> {
+    let mut n = 0;
+    let mut total = 0;
+    let inc = |x| {
+        n += 1;
+        if (n + 20) % 40 == 0 {
+            total += n * (x + 1);
+        }
+    };
+    process(lines, inc)?;
     Ok(total)
 }
 
 pub fn task2(lines: &[String]) -> Result<(), &'static str> {
     let mut n = 0;
-    let mut x = 0;
-    let mut inc = |x| {
+    let draw = |x| {
         let pixel = if n >= x && n <= x + 2 { '#' } else { '.' };
         print!("{}", pixel);
         n += 1;
-        if (n % 40) == 0 {
+        if n >= 40 {        // next line
             println!();
             n = 0;
         }
     };
-    for line in lines {
-        let cmd = line.split_ascii_whitespace().collect::<Vec<_>>();
-        match cmd[0] {
-            "noop" => {
-                inc(x);
-            },
-            "addx" => {
-                inc(x);
-                inc(x);
-                x += cmd[1].parse::<i32>().unwrap();
-            },
-            _ => return Err("invalid input")
-        }
-    }
+    process(lines, draw)?;
     Ok(())
 }
 
@@ -60,15 +74,6 @@ mod tests {
     use super::*;
     #[test]
     fn test1() {
-        let data = &[
-            "noop",
-            "addx 3",
-            "addx -5",
-        ].into_iter().map(|s| s.to_string()).collect::<Vec<String>>();
-        assert_eq!(Ok(0), task1(&data));
-    }
-    #[test]
-    fn test2() {
         let data = &[
             "addx 15",
             "addx -11",

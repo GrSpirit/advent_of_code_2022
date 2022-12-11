@@ -16,11 +16,11 @@ fn main() -> io::Result<()>{
         Mode::File(file_path) => read_file(&file_path)?,
         Mode::Stdin => read_stdin()?
     };
-    match task1(&data) {
+    match task1(&data, 20, 3) {
         Ok(result) => println!("result {}", result),
         Err(error) => println!("error {}", error)
     }
-    match task2(&data) {
+    match task1(&data, 10000, 1) {
         Ok(result) => println!("result {}", result),
         Err(error) => println!("error {}", error)
     }

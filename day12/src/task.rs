@@ -27,8 +27,8 @@ fn can_visit(next_val: u8, prev_val: u8) -> bool {
     (next_val == b'S' && (prev_val == b'a' || prev_val == b'b'))
 }
 
-pub fn find_target<F: Fn(u8)->bool>(grid: Vec<Vec<u8>>, is_finish: F) -> Result<i32, Error> {
-    const DIRECTIONS: &[(i32, i32)] = &[(-1, 0), (0, -1), (1, 0), (0, 1)];
+pub fn find_target<F: Fn(u8)->bool>(grid: Vec<Vec<u8>>, is_finish: F) -> Result<u32, Error> {
+    const DIRECTIONS: &[(isize, isize)] = &[(-1, 0), (0, -1), (1, 0), (0, 1)];
     let n = grid.len();
     let m = grid[0].len();
     let mut visited = vec![vec![false; grid[0].len()]; grid.len()];
@@ -41,7 +41,7 @@ pub fn find_target<F: Fn(u8)->bool>(grid: Vec<Vec<u8>>, is_finish: F) -> Result<
             return Ok(length);
         }
         for (i, j) in DIRECTIONS {
-            let (next_row, next_col) = ((row as i32 + i) as usize, (col as i32 + j) as usize);
+            let (next_row, next_col) = ((row as isize + i) as usize, (col as isize + j) as usize);
             if next_row < n && next_col < m && !visited[next_row][next_col] && can_visit(grid[next_row][next_col], grid[row][col]) {
                 visited[next_row][next_col] = true;
                 queue.push_back((next_row, next_col, length + 1));
@@ -51,18 +51,18 @@ pub fn find_target<F: Fn(u8)->bool>(grid: Vec<Vec<u8>>, is_finish: F) -> Result<
     Err(Error::TargetNotFound)
 }
 
-pub fn task1<S: AsRef<str>>(lines: &[S]) -> Result<i32, Error> {
+pub fn task1<S: AsRef<str>>(lines: &[S]) -> Result<u32, Error> {
     find_target(to_grid(lines), |x| x == b'S')
 }
 
-pub fn task2<S: AsRef<str>>(lines: &[S]) -> Result<i32, Error> {
+pub fn task2<S: AsRef<str>>(lines: &[S]) -> Result<u32, Error> {
     find_target(to_grid(lines), |x| x == b'S' || x == b'a')
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    const DATA: &'static str = "Sabqponm
+    const DATA: &str = "Sabqponm
 abcryxxl
 accszExk
 acctuvwj

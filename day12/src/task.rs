@@ -1,43 +1,46 @@
-use std::error::Error;
 use std::collections::VecDeque;
 
-pub type BoxResult<T> = Result<T, Box<dyn Error>>;
+#[derive(Debug, Clone, thiserror::Error, PartialEq)]
+pub enum Error {
+    #[error("Start position not found")]
+    StartNotFound,
+    #[error("Target not found")]
+    TargetNotFound,
+}
 
 fn to_grid<S: AsRef<str>>(lines: &[S]) -> Vec<Vec<u8>> {
     lines.iter().map(|l| l.as_ref().bytes().collect()).collect()
 }
 
-fn start_position(grid: &Vec<Vec<u8>>) -> (usize, usize) {
+fn start_position(grid: &Vec<Vec<u8>>) -> Option<(usize, usize)> {
     for (i, row) in grid.iter().enumerate() {
-        if let Some(j) = row.iter().position(|x| *x == b'S') {
-            return (i, j);
+        if let Some(j) = row.iter().position(|x| *x == b'E') {
+            return Some((i, j));
         }
     }
-    (0, 0)
+    None
 }
 
 fn can_visit(next_val: u8, prev_val: u8) -> bool {
-    (next_val >= b'a' && next_val <= prev_val + 1) ||
-    (prev_val == b'z' && next_val == b'E') || (prev_val == b'S' && (next_val == b'a' || next_val == b'b'))
+    (next_val.is_ascii_lowercase() && prev_val.is_ascii_lowercase() && next_val >= prev_val - 1) ||
+    (prev_val == b'E' && next_val == b'z') ||
+    (next_val == b'S' && (prev_val == b'a' || prev_val == b'b'))
 }
 
-pub fn task1<S: AsRef<str>>(lines: &[S]) -> BoxResult<i32> {
-    let grid = to_grid(lines);
+pub fn find_target<F: Fn(u8)->bool>(grid: Vec<Vec<u8>>, is_finish: F) -> Result<i32, Error> {
+    const DIRECTIONS: &[(i32, i32)] = &[(-1, 0), (0, -1), (1, 0), (0, 1)];
     let n = grid.len();
     let m = grid[0].len();
     let mut visited = vec![vec![false; grid[0].len()]; grid.len()];
-    //let mut path = Vec::new();
-    let (start_row, start_col) = start_position(&grid);
-    //dfs(&grid, &mut path, &mut visited, start_row, start_col);
+    let (start_row, start_col) = start_position(&grid).ok_or(Error::StartNotFound)?;
     let mut queue = VecDeque::new();
     queue.push_back((start_row, start_col, 0));
-    let directions = [(-1, 0), (0, -1), (1, 0), (0, 1)];
     visited[start_row][start_col] = true;
     while let Some((row, col, length)) = queue.pop_front() {
-        if grid[row][col] == b'E' {
+        if is_finish(grid[row][col]) {
             return Ok(length);
         }
-        for (i, j) in &directions {
+        for (i, j) in DIRECTIONS {
             let (next_row, next_col) = ((row as i32 + i) as usize, (col as i32 + j) as usize);
             if next_row < n && next_col < m && !visited[next_row][next_col] && can_visit(grid[next_row][next_col], grid[row][col]) {
                 visited[next_row][next_col] = true;
@@ -45,11 +48,15 @@ pub fn task1<S: AsRef<str>>(lines: &[S]) -> BoxResult<i32> {
             }
         }
     }
-    Err(Box::<dyn Error>::from("not found"))
+    Err(Error::TargetNotFound)
 }
 
-pub fn task2<S: AsRef<str>>(lines: &[S]) -> BoxResult<u32> {
-    Ok(lines.len() as u32)
+pub fn task1<S: AsRef<str>>(lines: &[S]) -> Result<i32, Error> {
+    find_target(to_grid(lines), |x| x == b'S')
+}
+
+pub fn task2<S: AsRef<str>>(lines: &[S]) -> Result<i32, Error> {
+    find_target(to_grid(lines), |x| x == b'S' || x == b'a')
 }
 
 #[cfg(test)]
@@ -64,12 +71,12 @@ abdefghi";
     #[test]
     fn test1() {
         let lines = DATA.split('\n').collect::<Vec<_>>();
-        assert_eq!(31, task1(&lines).unwrap());
+        assert_eq!(Ok(31), task1(&lines));
     }
 
     #[test]
     fn test2() {
         let lines = DATA.split('\n').collect::<Vec<_>>();
-        assert_eq!(5, task2(&lines).unwrap());
+        assert_eq!(Ok(29), task2(&lines));
     }
 }

@@ -1,82 +1,216 @@
-use std::collections::VecDeque;
+use std::ops::Index;
+use std::slice::SliceIndex;
+use std::str::{self, FromStr};
+use std::cmp::{PartialOrd, Ord, Ordering, PartialEq, Eq};
 
-#[derive(Debug, Clone, thiserror::Error, PartialEq)]
+#[derive(thiserror::Error, Debug, Clone, PartialEq)]
 pub enum Error {
-    #[error("Start position not found")]
-    StartNotFound,
-    #[error("Target not found")]
-    TargetNotFound,
+    #[error("Internal Error")]
+    #[allow(unused)]
+    Internal,
+    #[error("Wrong list format")]
+    WrongListFormat,
+    #[error("Parse error")]
+    ParseError,
 }
 
-fn to_grid<S: AsRef<str>>(lines: &[S]) -> Vec<Vec<u8>> {
-    lines.iter().map(|l| l.as_ref().bytes().collect()).collect()
-}
-
-fn start_position(grid: &Vec<Vec<u8>>) -> Option<(usize, usize)> {
-    for (i, row) in grid.iter().enumerate() {
-        if let Some(j) = row.iter().position(|x| *x == b'E') {
-            return Some((i, j));
-        }
+impl From<std::num::ParseIntError> for Error {
+    fn from(_: std::num::ParseIntError) -> Self {
+        Error::ParseError
     }
-    None
 }
 
-fn can_visit(next_val: u8, prev_val: u8) -> bool {
-    (next_val.is_ascii_lowercase() && prev_val.is_ascii_lowercase() && next_val >= prev_val - 1) ||
-    (prev_val == b'E' && next_val == b'z') ||
-    (next_val == b'S' && (prev_val == b'a' || prev_val == b'b'))
+#[derive(Debug, Clone)]
+enum ListNode {
+    Val(i32),
+    List(List),
 }
 
-pub fn find_target<F: Fn(u8)->bool>(grid: Vec<Vec<u8>>, is_finish: F) -> Result<i32, Error> {
-    const DIRECTIONS: &[(i32, i32)] = &[(-1, 0), (0, -1), (1, 0), (0, 1)];
-    let n = grid.len();
-    let m = grid[0].len();
-    let mut visited = vec![vec![false; grid[0].len()]; grid.len()];
-    let (start_row, start_col) = start_position(&grid).ok_or(Error::StartNotFound)?;
-    let mut queue = VecDeque::new();
-    queue.push_back((start_row, start_col, 0));
-    visited[start_row][start_col] = true;
-    while let Some((row, col, length)) = queue.pop_front() {
-        if is_finish(grid[row][col]) {
-            return Ok(length);
-        }
-        for (i, j) in DIRECTIONS {
-            let (next_row, next_col) = ((row as i32 + i) as usize, (col as i32 + j) as usize);
-            if next_row < n && next_col < m && !visited[next_row][next_col] && can_visit(grid[next_row][next_col], grid[row][col]) {
-                visited[next_row][next_col] = true;
-                queue.push_back((next_row, next_col, length + 1));
+#[derive(Debug, Clone, Default)]
+struct List {
+    data: Vec<ListNode>,
+}
+
+macro_rules! list {
+    [$($x: expr),*] => {{
+        let mut new_list = List::new();
+        $(
+            new_list.push($x);
+        )*
+        new_list
+    }};
+}
+
+impl List {
+    fn new() -> Self {
+        Default::default()
+    }
+    fn push(&mut self, x: ListNode) {
+        self.data.push(x);
+    }
+    fn len(&self) -> usize {
+        self.data.len()
+    }
+}
+
+impl PartialEq for List {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+
+impl Eq for List {}
+
+impl Ord for List {
+    fn cmp(&self, other: &Self) -> Ordering {
+        let mut i = 0;
+        while i < self.len() && i < other.len() {
+            let cmp_res = match &self[i] {
+                ListNode::List(sublist1) => {
+                    match &other[i] {
+                        ListNode::List(sublist2) => {
+                            sublist1.cmp(&sublist2)
+                        },
+                        ListNode::Val(x2) => {
+                            let sublist2 = list![ListNode::Val(*x2)];
+                            sublist1.cmp(&sublist2)
+                        }
+                    }
+                },
+                ListNode::Val(x1) => {
+                    match &other[i] {
+                        ListNode::Val(x2) if x1 < x2 => Ordering::Less,
+                        ListNode::Val(x2) if x1 > x2 => Ordering::Greater,
+                        ListNode::List(sublist2) => {
+                            let sublist1 = list![ListNode::Val(*x1)];
+                            sublist1.cmp(&sublist2)
+                        },
+                        _ => Ordering::Equal
+                    }
+                }
+            };
+            if cmp_res != Ordering::Equal {
+                return cmp_res
             }
+            i += 1;
+        }
+        if self.len() == other.len() {
+            Ordering::Equal
+        } else {
+            if i == self.len() { Ordering::Less } else { Ordering::Greater }
         }
     }
-    Err(Error::TargetNotFound)
 }
 
-pub fn task1<S: AsRef<str>>(lines: &[S]) -> Result<i32, Error> {
-    find_target(to_grid(lines), |x| x == b'S')
+impl PartialOrd for List {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
-pub fn task2<S: AsRef<str>>(lines: &[S]) -> Result<i32, Error> {
-    find_target(to_grid(lines), |x| x == b'S' || x == b'a')
+impl<Idx> Index<Idx> for List
+where Idx: SliceIndex<[ListNode], Output = ListNode> {
+    type Output = ListNode;
+    #[inline(always)]
+    fn index(&self, index: Idx) -> &Self::Output {
+        self.data.index(index)
+    }
+}
+
+impl FromStr for List {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.as_bytes();
+        let mut i = 0;
+        let mut list = List::new();
+        let mut stack = Vec::new();
+        while i < s.len() - 1 {
+            match s[i] {
+                b'0'..=b'9' => {
+                    let l = s.iter().skip(i).position(|x| !x.is_ascii_digit()).ok_or(Error::WrongListFormat)?;
+                    let node = ListNode::Val(str::from_utf8(&s[i..i+l]).unwrap().parse()?);
+                    list.push(node);
+                    i += l;
+                },
+                b'[' => {
+                    stack.push(list);
+                    list = List::new();
+                    i += 1;
+                },
+                b']' => {
+                    if let Some(mut last) = stack.pop() {
+                        last.push(ListNode::List(list));
+                        list = last;
+                    }
+                    i += 1;
+                },
+                b',' => {
+                    i += 1;
+                }
+                _ => return Err(Error::WrongListFormat)
+            };
+        }
+        return Ok(list);
+    }
+}
+
+pub fn task1<S: AsRef<str>>(lines: &[S]) -> Result<u32, Error> {
+    Ok(
+        lines.chunks(3).enumerate()
+        .map(|(i, chunk)| (i, chunk[0].as_ref().parse::<List>().unwrap(), chunk[1].as_ref().parse::<List>().unwrap()))
+        .filter(|(_, list1, list2)| list1 < list2)
+        .map(|(i, _, _)| i as u32 + 1).sum()
+    )
+}
+
+pub fn task2<S: AsRef<str>>(lines: &[S]) -> Result<u32, Error> {
+    let mut lists = lines.iter().map(|l| l.as_ref()).filter(|l| !l.is_empty()).map(|l| l.parse::<List>().unwrap()).collect::<Vec<_>>();
+    let marker1 = list![ListNode::List(list![ListNode::Val(2)])];
+    let marker2 = list![ListNode::List(list![ListNode::Val(6)])];
+    lists.push(marker1.clone());
+    lists.push(marker2.clone());
+    lists.sort();
+    let p1 = lists.iter().position(|m| m == &marker1).unwrap() + 1;
+    let p2 = lists.iter().position(|m| m == &marker2).unwrap() + 1;
+    Ok(p1 as u32 * p2 as u32)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    const DATA: &'static str = "Sabqponm
-abcryxxl
-accszExk
-acctuvwj
-abdefghi";
+    const DATA: &'static str = "[1,1,3,1,1]
+    [1,1,5,1,1]
+
+    [[1],[2,3,4]]
+    [[1],4]
+
+    [9]
+    [[8,7,6]]
+
+    [[4,4],4,4]
+    [[4,4],4,4,4]
+
+    [7,7,7,7]
+    [7,7,7]
+
+    []
+    [3]
+
+    [[[]]]
+    [[]]
+
+    [1,[2,[3,[4,[5,6,7]]]],8,9]
+    [1,[2,[3,[4,[5,6,0]]]],8,9]";
 
     #[test]
     fn test1() {
-        let lines = DATA.split('\n').collect::<Vec<_>>();
-        assert_eq!(Ok(31), task1(&lines));
+        let lines = DATA.split('\n').map(|s| s.trim()).collect::<Vec<_>>();
+        assert_eq!(Ok(13), task1(&lines));
     }
 
     #[test]
     fn test2() {
-        let lines = DATA.split('\n').collect::<Vec<_>>();
-        assert_eq!(Ok(29), task2(&lines));
+        let lines = DATA.split('\n').map(|s| s.trim()).collect::<Vec<_>>();
+        assert_eq!(Ok(140), task2(&lines));
     }
 }

@@ -28,7 +28,8 @@ impl From<std::num::ParseIntError> for Error {
     }
 }
 
-fn transform1(points: Vec<Vec<Point>>, min_x: i32, _min_y: i32, max_x: i32, max_y: i32) -> Vec<Vec<u8>> {
+fn transform(points: Vec<Vec<Point>>, min_x: i32, max_x: i32, max_y: i32) -> Vec<Vec<u8>> {
+    use std::mem::swap;
     let n = (max_y + 1) as usize;
     let m = (max_x - min_x + 1) as usize;
     let mut grid = vec![vec![b'.'; m]; n];
@@ -39,10 +40,10 @@ fn transform1(points: Vec<Vec<Point>>, min_x: i32, _min_y: i32, max_x: i32, max_
             let mut end_j = (row[k].x - min_x) as usize;
             let mut end_i = row[k].y as usize;
             if start_j > end_j {
-                std::mem::swap(&mut start_j, &mut end_j);
+                swap(&mut start_j, &mut end_j);
             }
             if start_i > end_i {
-                std::mem::swap(&mut start_i, &mut end_i);
+                swap(&mut start_i, &mut end_i);
             }
             if start_i == end_i {
                 for j in start_j..=end_j {
@@ -58,110 +59,56 @@ fn transform1(points: Vec<Vec<Point>>, min_x: i32, _min_y: i32, max_x: i32, max_
     grid
 }
 
-fn parse_grid1<S: AsRef<str>>(lines: &[S]) -> (Vec<Vec<u8>>, usize) {
-    let (mut min_x, mut max_x) = (i32::MAX, i32::MIN);
-    let (mut min_y, mut max_y) = (i32::MAX, i32::MIN);
+fn parse_grid<S: AsRef<str>>(lines: &[S]) -> Vec<Vec<Point>> {
     let mut points = Vec::new();
     for line in lines {
         let path: Vec<Point> = line.as_ref().split(" -> ").map(|p| p.parse::<Point>().unwrap()).collect();
-        min_x = path.iter().map(|p| p.x).min().unwrap().min(min_x);
-        max_x = path.iter().map(|p| p.x).max().unwrap().max(max_x);
-        min_y = path.iter().map(|p| p.y).min().unwrap().min(min_y);
-        max_y = path.iter().map(|p| p.y).max().unwrap().max(max_y);
         points.push(path);
     }
-    (transform1(points, min_x, min_y, max_x, max_y), min_x as usize)
-}
-
-fn drop1(grid: &mut Vec<Vec<u8>>, shift: usize) -> bool {
-    let mut j = 500 - shift;
-    let n = grid.len();
-    let m = grid[0].len();
-    for i in 1..n {
-        if grid[i][j] == b'.' {
-            continue;
-        } else {
-            if j == 0 {
-                return false;
-            } else if grid[i][j - 1] == b'.' {
-                j -= 1;
-            } else if j + 1 == m {
-                return false;
-            } else if grid[i][j + 1] == b'.' {
-                j += 1;
-            } else {
-                grid[i - 1][j] = b'o';
-                return true;
-            }
-        }
-    }
-    return false;
+    points
 }
 
 pub fn task1<S: AsRef<str>>(lines: &[S]) -> Result<u32, Error> {
-    let (mut grid, shift) = parse_grid1(lines);
+    return simulate(lines, |points| {
+        let min_x = points.iter().map(|v| v.iter().map(|p| p.x).min().unwrap()).min().unwrap();
+        let max_x = points.iter().map(|v| v.iter().map(|p| p.x).max().unwrap()).max().unwrap();
+        let max_y = points.iter().map(|v| v.iter().map(|p| p.y).max().unwrap()).max().unwrap();
+        (min_x, max_x, max_y)
+    });
+}
+
+pub fn task2<S: AsRef<str>>(lines: &[S]) -> Result<u32, Error> {
+    simulate(lines, |points| {
+        let max_y = points.iter().map(|v| v.iter().map(|p| p.y).max().unwrap()).max().unwrap();
+        let min_x = 498 - max_y;
+        let max_x = 502 + max_y;
+        points.push(vec![Point{x: min_x, y: max_y + 2}, Point{ x: max_x, y: max_y + 2}]);
+        (min_x, max_x, max_y + 2)
+    })
+}
+
+fn simulate<S: AsRef<str>, F: FnMut(&mut Vec<Vec<Point>>) -> (i32, i32, i32)>(lines: &[S], mut mutate: F) -> Result<u32, Error> {
+    let mut points = parse_grid(lines);
+    let (min_x, max_x, max_y) = mutate(&mut points);
+    let mut grid = transform(points, min_x, max_x, max_y);
     let mut total = 0;
-    while drop1(&mut grid, shift) {
-        total += 1;
-        for row in &grid {
-            println!("{}", str::from_utf8(row).unwrap());
+    loop {
+        let n = drop(&mut grid, min_x as usize);
+        if n == 0 {
+            break;
         }
+        total += n;
     }
     Ok(total)
 }
 
-fn transform2(points: Vec<Vec<Point>>, min_x: i32, _min_y: i32, max_x: i32, max_y: i32) -> Vec<Vec<u8>> {
-    let n = (max_y + 3) as usize;
-    let m = (max_x - min_x + 1) as usize;
-    let mut grid = vec![vec![b'.'; m]; n];
-    for row in points {
-        for k in 1..row.len() {
-            let mut start_j = (row[k - 1].x - min_x) as usize;
-            let mut start_i = row[k - 1].y as usize;
-            let mut end_j = (row[k].x - min_x) as usize;
-            let mut end_i = row[k].y as usize;
-            if start_j > end_j {
-                std::mem::swap(&mut start_j, &mut end_j);
-            }
-            if start_i > end_i {
-                std::mem::swap(&mut start_i, &mut end_i);
-            }
-            if start_i == end_i {
-                for j in start_j..=end_j {
-                    grid[start_i][j] = b'#';
-                }
-            } else {
-                for i in start_i..=end_i {
-                    grid[i][start_j] = b'#';
-                }
-            }
-        }
-    }
-    grid[n - 1] = vec![b'#'; m];
-    grid
-}
-
-fn parse_grid2<S: AsRef<str>>(lines: &[S]) -> (Vec<Vec<u8>>, usize) {
-    let (mut min_x, mut max_x) = (i32::MAX, i32::MIN);
-    let (mut min_y, mut max_y) = (i32::MAX, i32::MIN);
-    let mut points = Vec::new();
-    for line in lines {
-        let path: Vec<Point> = line.as_ref().split(" -> ").map(|p| p.parse::<Point>().unwrap()).collect();
-        min_x = path.iter().map(|p| p.x).min().unwrap().min(min_x);
-        max_x = path.iter().map(|p| p.x).max().unwrap().max(max_x);
-        min_y = path.iter().map(|p| p.y).min().unwrap().min(min_y);
-        max_y = path.iter().map(|p| p.y).max().unwrap().max(max_y);
-        points.push(path);
-    }
-    (transform2(points, 498 - max_y, min_y, 502 + max_y, max_y), 498 - max_y as usize)
-}
-
-fn drop2(grid: &mut Vec<Vec<u8>>, shift: usize) -> u32 {
-    let mut j = 500 - shift;
+fn drop(grid: &mut Vec<Vec<u8>>, center: usize) -> u32 {
+    const WIDTH: usize = 500;
+    let mut j = WIDTH - center;
     let n = grid.len();
     let m = grid[0].len();
     for i in 1..n {
-        if grid[0][500 - shift] == b'o' {
+        if grid[0][WIDTH - center] == b'o' {
             break;
         } else if grid[i][j] == b'.' {
             continue;
@@ -183,19 +130,6 @@ fn drop2(grid: &mut Vec<Vec<u8>>, shift: usize) -> u32 {
         }
     }
     return 0;
-}
-
-pub fn task2<S: AsRef<str>>(lines: &[S]) -> Result<u32, Error> {
-    let (mut grid, shift) = parse_grid2(lines);
-    let mut total = 0;
-    loop {
-        let n = drop2(&mut grid, shift);
-        if n == 0 {
-            break;
-        }
-        total += n;
-    }
-    Ok(total)
 }
 
 #[cfg(test)]

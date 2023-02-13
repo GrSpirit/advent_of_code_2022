@@ -1,4 +1,5 @@
 use std::convert::TryFrom;
+use std::fmt::Display;
 use std::mem::swap;
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
@@ -25,6 +26,15 @@ impl TryFrom<u8> for Field {
     }
 }
 
+impl Display for Field {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Field::Empty => write!(f, "."),
+            Field::Occupied => write!(f, "#")
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Direction {
     North,
@@ -33,28 +43,37 @@ enum Direction {
     East
 }
 
-fn parse_input<S: AsRef<str>>(lines: &[S]) -> Vec<Vec<Field>> {
-    let initial_grid = lines.iter().map(|row| row.as_ref().bytes().map(|b| Field::try_from(b).unwrap()).collect::<Vec<_>>()).collect::<Vec<_>>();
-    let n = initial_grid.len();
-    let m = initial_grid[0].len();
-    let mut grid = vec![vec![Field::Empty; m]; 2*n];
-    grid.extend_from_slice(&initial_grid);
-    grid.extend_from_slice(&vec![vec![Field::Empty; m]; 2*n]);
-    grid.into_iter().map(|initial_row| {
-        let mut row = vec![Field::Empty; 2*m];
-        row.extend_from_slice(&initial_row);
-        row.extend_from_slice(&vec![Field::Empty; 2*m]);
-        row
-    }).collect()
+type Grid = Vec<Vec<Field>>;
+macro_rules! n {
+    ($grid: expr) => {
+        $grid.len()
+    };
+}
+macro_rules! m {
+    ($grid: expr) => {
+        $grid[0].len()
+    };
+}
+
+fn parse_input<S: AsRef<str>>(lines: &[S]) -> Grid {
+    let n = lines.len();
+    let m = lines[0].as_ref().len();
+    let grid_iter = lines.iter().map(|row|
+        (0..2*m).map(|_| Field::Empty)
+        .chain(row.as_ref().bytes().map(|b| Field::try_from(b).unwrap()))
+        .chain((0..2*m).map(|_| Field::Empty))
+        .collect::<Vec<_>>()
+    );
+    (0..2*n).map(|_| vec![Field::Empty; 5*m]).chain(grid_iter).chain((0..2*n).map(|_| vec![Field::Empty; 5*m])).collect()
 }
 
 fn range(x: usize, n: usize) -> (usize, usize) {
     ((x as i32 - 1).max(0) as usize, (x + 1).min(n - 1))
 }
 
-fn try_direction(grid: &Vec<Vec<Field>>, d: Direction, i: usize, j: usize) -> bool {
-    let n = grid.len();
-    let m = grid[0].len();
+fn try_direction(grid: &Grid, d: Direction, i: usize, j: usize) -> bool {
+    let n = n!(grid);
+    let m = m!(grid);
     let (i_from, i_to) = range(i, n);
     let (j_from, j_to) = range(j, m);
     match d {
@@ -73,11 +92,9 @@ fn try_direction(grid: &Vec<Vec<Field>>, d: Direction, i: usize, j: usize) -> bo
     }
 }
 
-fn is_alone(grid: &Vec<Vec<Field>>, ii: usize, jj: usize) -> bool {
-    let n = grid.len();
-    let m = grid[0].len();
-    let (i_from, i_to) = range(ii, n);
-    let (j_from, j_to) = range(jj, m);
+fn is_alone(grid: &Grid, ii: usize, jj: usize) -> bool {
+    let (i_from, i_to) = range(ii, n!(grid));
+    let (j_from, j_to) = range(jj, m!(grid));
     for i in i_from..=i_to {
         for j in j_from..=j_to {
             if i == ii && j == jj {
@@ -91,15 +108,15 @@ fn is_alone(grid: &Vec<Vec<Field>>, ii: usize, jj: usize) -> bool {
     return true;
 }
 
-fn try_move(grid: &Vec<Vec<Field>>, proposal: &Vec<Vec<Option<Direction>>>, d: Direction, ii: usize, jj: usize) -> Option<(usize, usize)> {
+fn try_move(grid: &Grid, proposal: &Vec<Vec<Option<Direction>>>, d: Direction, ii: usize, jj: usize) -> Option<(usize, usize)> {
     let (i, j) = match d {
         Direction::North => (ii - 1, jj),
         Direction::South => (ii + 1, jj),
         Direction::East => (ii, jj + 1),
         Direction::West => (ii, jj - 1),
     };
-    let n = grid.len();
-    let m = grid[0].len();
+    let n = n!(grid);
+    let m = m!(grid);
     if (i > 0 && i - 1 != ii && proposal[i - 1][j].map(|d| d == Direction::South).unwrap_or(false)) ||
         (i + 1 < n && i + 1 != ii && proposal[i + 1][j].map(|d| d == Direction::North).unwrap_or(false)) ||
         (j > 0 && j - 1 != jj && proposal[i][j - 1].map(|d| d == Direction::East).unwrap_or(false)) ||
@@ -112,24 +129,20 @@ fn try_move(grid: &Vec<Vec<Field>>, proposal: &Vec<Vec<Option<Direction>>>, d: D
 
 }
 
-fn print_grid(grid: &Vec<Vec<Field>>) {
+#[allow(unused)]
+fn print_grid(grid: &Grid) {
     grid.iter().for_each(|row| {
-        row.iter().for_each(|f| {
-            match *f {
-                Field::Empty => print!("."),
-                Field::Occupied => print!("#"),
-            }
-        });
+        row.iter().for_each(|f| { print!("{}", f); });
         println!();
     });
     println!();
 }
 
-fn play(grid: &mut Vec<Vec<Field>>, tmp_grid: &mut Vec<Vec<Field>>, round: usize) -> bool {
+fn play(grid: &mut Grid, round: usize) -> bool {
     let directions = [Direction::North, Direction::South, Direction::West, Direction::East];
-    let n = grid.len();
-    let m = grid[0].len();
-    tmp_grid.iter_mut().for_each(|row| row.iter_mut().for_each(|f| *f = Field::Empty));
+    let n = n!(grid);
+    let m = m!(grid);
+    let mut tmp_grid = vec![vec![Field::Empty; m]; n];
     let mut proposal: Vec<Vec<Option<Direction>>> = vec![vec![None; m]; n];
     let mut moves = false;
     for i in 0..n {
@@ -166,51 +179,32 @@ fn play(grid: &mut Vec<Vec<Field>>, tmp_grid: &mut Vec<Vec<Field>>, round: usize
             }
         }
     }
-    swap(grid, tmp_grid);
+    swap(grid, &mut tmp_grid);
     moves
 }
 
 pub fn task1<S: AsRef<str>>(lines: &[S]) -> Result<u32, Error> {
     let mut grid = parse_input(lines);
-    let mut tmp_grid = vec![vec![Field::Empty; grid[0].len()]; grid.len()];
+    let n = n!(grid);
+    let m = m!(grid);
     for r in 0..10 {
-        play(&mut grid, &mut tmp_grid, r);
+        play(&mut grid, r);
     }
 
-    let mut i_from = 0;
-    loop {
-        let is_empty = grid[i_from].iter().all(|&f| f == Field::Empty);
-        if !is_empty { break }
-        i_from += 1;
-    }
-    let mut i_to = grid.len() - 1;
-    loop {
-        let is_empty = grid[i_to].iter().all(|&f| f == Field::Empty);
-        if !is_empty { break }
-        i_to -= 1;
-    }
-    let mut j_from = 0;
-    loop {
-        let is_empty = grid.iter().all(|r| r[j_from] == Field::Empty);
-        if !is_empty { break }
-        j_from += 1;
-    }
-    let mut j_to = grid[0].len() - 1;
-    loop {
-        let is_empty = grid.iter().all(|r| r[j_to] == Field::Empty);
-        if !is_empty { break }
-        j_to -= 1;
-    }
-    Ok(grid.into_iter().skip(i_from).take(i_to - i_from + 1).map(
-        |row| row.into_iter().skip(j_from).take(j_to - j_from + 1).filter(|&f| f == Field::Empty).count()
+    let i_from = grid.iter().position(|row| row.iter().any(|&f| f == Field::Occupied)).unwrap();
+    let i_to = n - grid.iter().rev().position(|row| row.iter().any(|&f| f == Field::Occupied)).unwrap();
+
+    let j_from = (0..m).position(|i| grid.iter().any(|row| row[i] == Field::Occupied)).unwrap();
+    let j_to = m - (0..m).rev().position(|i| grid.iter().any(|row| row[i] == Field::Occupied)).unwrap();
+    Ok(grid.into_iter().skip(i_from).take(i_to - i_from).map(
+        |row| row.into_iter().skip(j_from).take(j_to - j_from).filter(|&f| f == Field::Empty).count()
     ).sum::<usize>() as u32)
 }
 
 pub fn task2<S: AsRef<str>>(lines: &[S]) -> Result<usize, Error> {
     let mut grid = parse_input(lines);
-    let mut tmp_grid = vec![vec![Field::Empty; grid[0].len()]; grid.len()];
     for r in 0.. {
-        if !play(&mut grid, &mut tmp_grid, r) {
+        if !play(&mut grid, r) {
             return Ok(r + 1);
         }
     }

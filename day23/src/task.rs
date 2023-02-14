@@ -1,6 +1,7 @@
 use std::convert::TryFrom;
 use std::fmt::Display;
 use std::mem::swap;
+use std::iter;
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum Error {
@@ -59,12 +60,12 @@ fn parse_input<S: AsRef<str>>(lines: &[S]) -> Grid {
     let n = lines.len();
     let m = lines[0].as_ref().len();
     let grid_iter = lines.iter().map(|row|
-        (0..2*m).map(|_| Field::Empty)
+        iter::repeat(Field::Empty).take(m)
         .chain(row.as_ref().bytes().map(|b| Field::try_from(b).unwrap()))
-        .chain((0..2*m).map(|_| Field::Empty))
-        .collect::<Vec<_>>()
+        .chain(iter::repeat(Field::Empty).take(m))
+        .collect()
     );
-    (0..2*n).map(|_| vec![Field::Empty; 5*m]).chain(grid_iter).chain((0..2*n).map(|_| vec![Field::Empty; 5*m])).collect()
+    iter::repeat(vec![Field::Empty; 3*m]).take(n).chain(grid_iter).chain(iter::repeat(vec![Field::Empty; 3*m]).take(n)).collect()
 }
 
 fn range(x: usize, n: usize) -> (usize, usize) {

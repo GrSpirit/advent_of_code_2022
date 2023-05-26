@@ -1,5 +1,7 @@
 mod input;
 mod task;
+mod tools;
+
 use input::{read_file, read_stdin};
 use std::io;
 use std::env;

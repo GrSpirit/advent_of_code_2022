@@ -1,3 +1,4 @@
+use super::tools;
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     #[error("Internal error")]
@@ -6,54 +7,51 @@ pub enum Error {
     #[error("Parse error")]
     ParseError,
     #[error("Srialize error")]
-    SerializeError,
+    SerializeError(#[from] std::string::FromUtf8Error),
 }
 
-fn decrypt(s: &str) -> Result<i64, Error> {
-    let mut result = 0;
-    let mut muiltiplier = 1;
-    for b in s.bytes().rev() {
-        let d = match b {
-            b'0' => 0,
-            b'1' => 1,
-            b'2' => 2,
-            b'-' => -1,
-            b'=' => -2,
-            _ => return Err(Error::ParseError)
-        };
-        result += d * muiltiplier;
-        muiltiplier *= 5;
-    }
-    Ok(result)
+pub type Result<T> = std::result::Result<T, Error>;
+
+fn decrypt(s: &str) -> Result<i64> {
+    let mapped: Option<Vec<i64>> = s.bytes().rev().map(|b| {
+        match b {
+            b'0' => Some(0),
+            b'1' => Some(1),
+            b'2' => Some(2),
+            b'-' => Some(-1),
+            b'=' => Some(-2),
+            _ => None
+        }
+    }).collect();
+
+    mapped.map(|m| 
+        m.iter().fold((0, 1), |(res, mult), d| {
+            (res + d * mult, mult * 5)
+        }).0
+    ).ok_or(Error::ParseError)
 }
 
-fn encrypt(mut x: i64) -> Result<String, Error> {
-    let mut s = Vec::new();
+fn encrypt(x: i64) -> Result<String> {
     if x == 0 {
         return Ok(String::from("0"));
     }
-    while x != 0 {
-        let rem = (x % 5) as u8;
-        x /= 5;
-        if rem < 3 {
-            s.push(b'0' + rem);
-        } else if rem == 3 {
-            s.push(b'=');
-            x += 1;
-        } else {
-            s.push(b'-');
-            x += 1;
+    let mut result = tools::DivIterator::new(x, 5)
+    .map(|rem|
+        match rem {
+            r if r < 3 => b'0' + r,
+            3 => b'=',
+            _ => b'-'
         }
-    }
-    s.reverse();
-    String::from_utf8(s).map_err(|_| Error::SerializeError)
+    ).collect::<Vec<_>>();
+    result.reverse();
+    Ok(String::from_utf8(result)?)
 }
 
-pub fn task1<S: AsRef<str>>(lines: &[S]) -> Result<String, Error> {
+pub fn task1<S: AsRef<str>>(lines: &[S]) -> Result<String> {
     encrypt(lines.iter().map(|s| decrypt(s.as_ref()).unwrap()).sum())
 }
 
-pub fn task2<S: AsRef<str>>(_lines: &[S]) -> Result<String, Error> {
+pub fn task2<S: AsRef<str>>(_lines: &[S]) -> Result<String> {
     Ok(String::from("ho-ho-ho"))
 }
 

@@ -6,8 +6,9 @@ use std::iter;
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     #[error("Internal error")]
-    #[allow(unused)]
     Internal,
+    #[error("Position error")]
+    Position,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,7 +62,7 @@ fn parse_input<S: AsRef<str>>(lines: &[S]) -> Grid {
     let m = lines[0].as_ref().len();
     let grid_iter = lines.iter().map(|row|
         iter::repeat(Field::Empty).take(m)
-        .chain(row.as_ref().bytes().map(|b| Field::try_from(b).unwrap()))
+        .chain(row.as_ref().bytes().map(|b| b.try_into().expect("Expect . or #")))
         .chain(iter::repeat(Field::Empty).take(m))
         .collect()
     );
@@ -192,11 +193,11 @@ pub fn task1<S: AsRef<str>>(lines: &[S]) -> Result<u32, Error> {
         play(&mut grid, r);
     }
 
-    let i_from = grid.iter().position(|row| row.iter().any(|&f| f == Field::Occupied)).unwrap();
-    let i_to = n - grid.iter().rev().position(|row| row.iter().any(|&f| f == Field::Occupied)).unwrap();
+    let i_from = grid.iter().position(|row| row.iter().any(|&f| f == Field::Occupied)).ok_or(Error::Position)?;
+    let i_to = n - grid.iter().rev().position(|row| row.iter().any(|&f| f == Field::Occupied)).ok_or(Error::Position)?;
 
-    let j_from = (0..m).position(|i| grid.iter().any(|row| row[i] == Field::Occupied)).unwrap();
-    let j_to = m - (0..m).rev().position(|i| grid.iter().any(|row| row[i] == Field::Occupied)).unwrap();
+    let j_from = (0..m).position(|i| grid.iter().any(|row| row[i] == Field::Occupied)).ok_or(Error::Position)?;
+    let j_to = m - (0..m).rev().position(|i| grid.iter().any(|row| row[i] == Field::Occupied)).ok_or(Error::Position)?;
     Ok(grid.into_iter().skip(i_from).take(i_to - i_from).map(
         |row| row.into_iter().skip(j_from).take(j_to - j_from).filter(|&f| f == Field::Empty).count()
     ).sum::<usize>() as u32)

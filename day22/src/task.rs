@@ -1,9 +1,23 @@
+use std::str::FromStr;
+use lazy_static::lazy_static;
+use regex::Regex;
+
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     #[error("Internal error")]
     #[allow(unused)]
     Internal,
+    #[error("Parse field error")]
+    ParseField(u8),
+    #[error("Parse grid error")]
+    ParseGrid,
+    #[error("Parse path error")]
+    ParsePath,
+    #[error("Wrong grid format")]
+    WrongGridFormat
 }
+
+pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Field {
@@ -12,11 +26,34 @@ enum Field {
     Wall,
 }
 
-#[derive(Debug, Clone, Copy)]
+impl TryFrom<u8> for Field {
+    type Error = Error;
+    fn try_from(value: u8) -> std::result::Result<Self, Self::Error> {
+        match value {
+            b' ' => Ok(Field::Empty),
+            b'.' => Ok(Field::Space),
+            b'#' => Ok(Field::Wall),
+            v => Err(Error::ParseField(v))
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Path {
     Forward(usize),
     Left,
     Right,
+}
+
+impl FromStr for Path {
+    type Err = Error;
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "L" => Ok(Path::Left),
+            "R" => Ok(Path::Right),
+            ns => ns.parse().map(|n| Path::Forward(n)).map_err(|_| Error::ParsePath)
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -39,117 +76,54 @@ impl From<Direction> for i32 {
     }
 }
 
-fn parse_path(path: &str) -> Vec<Path> {
-    let mut result = Vec::new();
-    let bytes = path.as_bytes();
-    let mut p = 0;
-    for i in 0..path.len() {
-        if !bytes[i].is_ascii_digit() {
-            if i > p {
-                result.push(Path::Forward(path[p..i].parse().unwrap()));
-            }
-            if bytes[i] == b'L' {
-                result.push(Path::Left);
-            } else if bytes[i] == b'R' {
-                result.push(Path::Right);
-            }
-            p = i + 1;
-        }
+fn parse_path(path: &str) -> Result<Vec<Path>> {
+    lazy_static! {
+        static ref RE: Regex = Regex::new(r"(\d+)|(L)|(R)").unwrap();
     }
-    if p < path.len() {
-        result.push(Path::Forward(path[p..].parse().unwrap()));
-    }
-    result
+    let result: Option<Vec<Path>> = RE.find_iter(path).map(|part| part.as_str().parse().ok()).collect();
+    result.ok_or(Error::ParsePath)
 }
 
-fn parse_input<S: AsRef<str>>(lines: &[S]) -> Result<(Vec<Vec<Field>>, Vec<Path>), Error> {
-    let mut raw_grid = Vec::new();
-    let mut max_width = 0;
-    for line in lines {
-        raw_grid.push(line.as_ref());
-        max_width = max_width.max(line.as_ref().len());
-        if line.as_ref().is_empty() {
-            break;
-        }
-    }
-    let grid = raw_grid.into_iter().map(|row| {
-        let mut r = row.bytes().map(|b| match b {
-            b' ' => Field::Empty,
-            b'.' => Field::Space,
-            b'#' => Field::Wall,
-            _ => unreachable!()
-        }).collect::<Vec<_>>();
-        if r.len() < max_width {
-            let n = max_width - r.len();
-            r.extend(vec![Field::Empty; n]);
-        }
-        r
-    }).collect::<Vec<_>>();
-    Ok((grid, parse_path(lines.last().unwrap().as_ref())))
+fn parse_input<S: AsRef<str>>(lines: &[S]) -> Result<(Vec<Vec<Field>>, Vec<Path>)> {
+    let grid_height = lines.iter().position(|s| s.as_ref().is_empty()).ok_or(Error::WrongGridFormat)?;
+    let max_width = lines.iter().take(grid_height).map(|s| s.as_ref().len()).max().unwrap();
+    
+    let grid: Option<Vec<Vec<Field>>> = lines.iter().take(grid_height).map(|row| {
+        row.as_ref()
+        .bytes()
+        .map(|b| b.try_into().ok())
+        .chain(std::iter::repeat(Some(Field::Empty)))
+        .take(max_width)
+        .collect()
+    }).collect();
+    Ok((grid.ok_or(Error::ParseGrid)?, parse_path(lines.last().unwrap().as_ref())?))
 }
 
-fn print_grid(grid: &Vec<Vec<Field>>, position: (usize, usize), dir: Direction) {
-    return;
-    for (i, row) in grid.iter().enumerate() {
-        for (j, field) in row.iter().enumerate() {
-            if (i, j) == position {
-                match dir {
-                    Direction::Right => print!(">"),
-                    Direction::Left => print!("<"),
-                    Direction::Up => print!("^"),
-                    Direction::Down => print!("v"),
-                }
-            } else {
-                match field {
-                    Field::Empty => print!(" "),
-                    Field::Space => print!("."),
-                    Field::Wall => print!("#"),
-                }
-            }
-        }
-        println!();
-    }
-    println!();
-}
-
-pub fn task1<S: AsRef<str>>(lines: &[S]) -> Result<i32, Error> {
-    fn move_to(grid: &Vec<Vec<Field>>, mut position: (usize, usize), dir: Direction) -> Option<(usize, usize)> {
+pub fn task1<S: AsRef<str>>(lines: &[S]) -> Result<i32> {
+    fn move_to(grid: &Vec<Vec<Field>>, position: (usize, usize), dir: Direction) -> Option<(usize, usize)> {
+        use crate::wrapper::*;
         let n = grid.len();
         let m = grid[0].len();
+        let (mut wi, mut wj) = (Wrapper(position.0), Wrapper(position.1));
         loop {
             match dir {
                 Direction::Right => {
-                    if position.1 == m - 1 {
-                        position.1 = 0;
-                    } else {
-                        position.1 += 1;
-                    }
-                },
+                    wj.inc(m);
+                }
                 Direction::Left => {
-                    if position.1 == 0 {
-                        position.1 = m - 1;
-                    } else {
-                        position.1 -= 1;
-                    }
+                    wj.dec(m);
                 },
                 Direction::Up => {
-                    if position.0 == 0 {
-                        position.0 = n - 1;
-                    } else {
-                        position.0 -= 1;
-                    }
+                    wi.dec(n);
                 },
                 Direction::Down => {
-                    if position.0 == n - 1 {
-                        position.0 = 0;
-                    } else {
-                        position.0 += 1;
-                    }
+                    wi.inc(n);
                 }
             }
-            match grid[position.0][position.1] {
+            let (i, j) = (wi.0, wj.0);
+            match grid[i][j] {
                 Field::Wall => return None,
-                Field::Space => return Some(position),
+                Field::Space => return Some((i, j)),
                 _ => {} // continue
             }
         }
@@ -157,7 +131,6 @@ pub fn task1<S: AsRef<str>>(lines: &[S]) -> Result<i32, Error> {
     let (grid, path) = parse_input(lines)?;
     let mut dir = Direction::Right;
     let mut position = (0usize, grid[0].iter().position(|f| *f == Field::Space).unwrap());
-    print_grid(&grid, position, dir);
     for p in path {
         match p {
             Path::Forward(n) => {
@@ -167,7 +140,6 @@ pub fn task1<S: AsRef<str>>(lines: &[S]) -> Result<i32, Error> {
                     } else {
                         break;
                     }
-                    print_grid(&grid, position, dir);
                 }
             },
             Path::Left => {
@@ -187,14 +159,13 @@ pub fn task1<S: AsRef<str>>(lines: &[S]) -> Result<i32, Error> {
                 };
             }
         }
-        print_grid(&grid, position, dir);
     }
-    println!("finish at {:?} {:?}", position, dir);
     let res = (position.0 as i32 + 1) * 1000 + (position.1 as i32 + 1) * 4 + i32::from(dir);
     Ok(res)
 }
 
-pub fn task2<S: AsRef<str>>(_lines: &[S]) -> Result<i32, Error> {
+#[allow(dead_code)]
+pub fn task2<S: AsRef<str>>(_lines: &[S]) -> Result<i32> {
     Ok(0)
 }
 
@@ -227,5 +198,13 @@ mod tests {
     fn test2() {
         let lines = DATA.split('\n').map(|s| s.trim()).collect::<Vec<_>>();
         assert_eq!(Ok(0), task2(&lines));
+    }
+
+    #[test]
+    fn test_parse_path() {
+        use Path::*;
+        let path = "10R5LR10L4RL5";
+        let result = parse_path(path);
+        assert_eq![Ok(vec![Forward(10), Right, Forward(5), Left, Right, Forward(10), Left, Forward(4), Right, Left, Forward(5)]), result]
     }
 }
